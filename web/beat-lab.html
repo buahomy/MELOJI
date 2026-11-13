@@ -1,0 +1,955 @@
+<title>MELOJI Beat Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Hanken+Grotesk:wght@400;500;600&family=Martian+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: a full-height 3D stage (the MELOJI pop-it ring) beside a control rail; on phones the rail stacks under the stage. */
+  :root {
+    color-scheme: dark;
+    --ground: #04222b;      /* the deep teal of the reference artwork */
+    --well: #062d37;        /* raised surfaces */
+    --line: rgba(160, 222, 214, 0.14);
+    --text: #e6f2ee;
+    --muted: #8db0aa;
+    --kick: #e39a55;
+    --snare: #38c9a6;
+    --clap: #ff56f2;
+    --ohat: #7a5cff;
+    --hat: #ffd47e;
+    --focus: #ffd47e;
+    --display: "Unbounded", "Arial Black", system-ui, sans-serif;
+    --body: "Hanken Grotesk", "Helvetica Neue", Arial, sans-serif;
+    --mono: "Martian Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+  html, body { height: 100%; }
+  body {
+    background: var(--ground);
+    color: var(--text);
+    font: 15px/1.5 var(--body);
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 0;
+    overflow: hidden;
+  }
+  .app {
+    height: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 0 20px;
+  }
+  .topbar {
+    grid-column: 1 / -1;
+    display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap;
+    gap: 8px 20px;
+    padding-block: 14px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: baseline; gap: 12px; }
+  .brand b { font: 700 18px/1 var(--display); letter-spacing: 0.04em; }
+  .brand span { font: 500 12px/1 var(--mono); color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
+  .keys { display: flex; flex-wrap: wrap; gap: 6px 14px; font: 400 11px/1.4 var(--mono); color: var(--muted); }
+  kbd { font: 500 11px/1 var(--mono); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 2px 5px; margin-right: 4px; }
+
+  /* ---- stage ---- */
+  .stage { position: relative; min-height: 0; min-width: 0; }
+  #scene { position: absolute; inset: 0; }
+  #scene canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  .readout {
+    position: absolute; left: 0; bottom: 14px;
+    display: flex; gap: 18px; flex-wrap: wrap;
+    font: 400 11px/1 var(--mono); color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase;
+    pointer-events: none;
+  }
+  .readout strong { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .hint { position: absolute; right: 0; bottom: 14px; font: 400 11px/1.4 var(--mono); color: var(--muted); pointer-events: none; text-align: right; }
+  #tip {
+    position: absolute; pointer-events: none; transform: translate(-50%, calc(-100% - 14px));
+    background: var(--well); border: 1px solid var(--line); border-radius: 6px;
+    padding: 5px 8px; font: 500 11px/1.2 var(--mono); white-space: nowrap;
+  }
+  #nogl { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: var(--muted); padding: 24px; }
+
+  /* ---- rail ---- */
+  .rail { min-height: 0; overflow-y: auto; padding-block: 16px 28px; display: flex; flex-direction: column; gap: 22px; }
+  .rail section { display: flex; flex-direction: column; gap: 12px; }
+  .rail h2 {
+    margin: 0; font: 500 11px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+    display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  }
+  .rail h2 small { font: inherit; letter-spacing: 0.04em; text-transform: none; }
+  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+  button, select, input { font: inherit; color: inherit; }
+  button {
+    background: transparent; border: 1px solid var(--line); border-radius: 999px;
+    padding: 7px 14px; cursor: pointer; font: 500 13px/1 var(--body);
+    transition: border-color .15s, background-color .15s;
+  }
+  button:hover:not(:disabled) { border-color: rgba(230, 242, 238, 0.45); }
+  button:disabled { opacity: 0.4; cursor: default; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .play {
+    width: 64px; height: 64px; border-radius: 50%; padding: 0; flex: none;
+    display: grid; place-items: center; background: var(--hat); border-color: var(--hat); color: var(--ground);
+  }
+  .play:hover:not(:disabled) { background: #ffe1a6; }
+  .play svg { width: 22px; height: 22px; fill: currentColor; }
+  .primary { background: var(--hat); border-color: var(--hat); color: var(--ground); }
+  .primary:hover:not(:disabled) { background: #ffe1a6; border-color: #ffe1a6; }
+
+  .dial { display: grid; grid-template-columns: 70px minmax(0, 1fr) 56px; align-items: center; gap: 10px; }
+  .dial label { font: 500 12px/1 var(--body); color: var(--muted); }
+  .dial output { font: 500 12px/1 var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
+  input[type="range"] { width: 100%; accent-color: var(--hat); }
+  select {
+    background: var(--well); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; min-width: 0; flex: 1;
+  }
+  .transport-dials { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 200px; }
+
+  /* step grid: the accessible, precise twin of the 3D ring */
+  .grid { display: flex; flex-direction: column; gap: 6px; }
+  .track { display: grid; grid-template-columns: 74px auto minmax(0, 1fr); align-items: center; gap: 8px; }
+  .track-name { display: flex; align-items: center; gap: 7px; font: 500 12px/1 var(--body); white-space: nowrap; }
+  .swatch { width: 9px; height: 9px; border-radius: 50%; background: var(--c); flex: none; }
+  .ms { display: flex; gap: 3px; }
+  .ms button { padding: 3px 0; width: 22px; font: 500 10px/1 var(--mono); border-radius: 4px; }
+  .ms button[aria-pressed="true"] { background: var(--text); color: var(--ground); border-color: var(--text); }
+  .cells { display: grid; grid-template-columns: repeat(16, minmax(0, 1fr)); gap: 3px; }
+  .cell {
+    aspect-ratio: 1; width: 100%; max-width: 100%; padding: 0; border-radius: 50%;
+    border: 1.5px solid color-mix(in srgb, var(--c) 70%, transparent);
+    background: color-mix(in srgb, var(--c) calc(var(--g, 0) * 55%), transparent);
+  }
+  .cell:nth-child(4n + 1) { border-width: 2px; }
+  .cell[aria-pressed="true"] { background: var(--c); border-color: var(--c); }
+  .cell.now { box-shadow: 0 0 0 2px rgba(230, 242, 238, 0.55); }
+
+  .ai-status { font: 400 12px/1.45 var(--mono); color: var(--muted); display: flex; flex-direction: column; gap: 8px; }
+  .ai-status strong { color: var(--text); font-weight: 500; }
+  #loss { width: 100%; height: 40px; display: block; }
+  .note { margin: 0; font-size: 13px; color: var(--muted); max-width: 60ch; }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .check input { accent-color: var(--hat); }
+  .code { display: flex; gap: 8px; }
+  .code input {
+    flex: 1; min-width: 0; background: var(--well); border: 1px solid var(--line); border-radius: 8px;
+    padding: 7px 10px; font: 400 12px/1 var(--mono);
+  }
+  #toast { font: 400 12px/1.4 var(--mono); color: var(--hat); min-height: 1.4em; }
+
+  @media (max-width: 860px) {
+    body { overflow: auto; }
+    .app { height: auto; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto; }
+    .stage { height: min(62vh, 520px); min-height: 340px; }
+    .rail { overflow: visible; }
+    .keys { display: none; }
+    .hint { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><b>MELOJI</b><span>Beat Lab · pop-it sequencer</span></div>
+    <div class="keys" aria-hidden="true">
+      <span><kbd>Space</kbd>play</span><span><kbd>C</kbd>complete</span><span><kbd>V</kbd>vary</span><span><kbd>D</kbd>dream</span><span><kbd>X</kbd>clear</span>
+    </div>
+  </header>
+
+  <main class="stage" aria-label="3D beat ring">
+    <div id="scene"></div>
+    <div id="tip" hidden></div>
+    <div id="nogl" hidden>3D needs WebGL, which this browser has turned off. The step grid on the right still plays every beat.</div>
+    <div class="readout" aria-live="off">
+      <span>Step <strong id="ro-step">01</strong>/16</span>
+      <span><strong id="ro-bpm">124</strong> BPM</span>
+      <span>Swing <strong id="ro-swing">56</strong>%</span>
+    </div>
+    <div class="hint">Tap a bubble to pop it · drag to orbit · tap the core to play</div>
+  </main>
+
+  <aside class="rail" aria-label="Controls">
+    <section aria-label="Transport">
+      <div class="row">
+        <button class="play" id="play" aria-label="Play">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path id="play-icon" d="M7 4.5v15l13-7.5z"/></svg>
+        </button>
+        <div class="transport-dials">
+          <div class="dial"><label for="bpm">Tempo</label><input type="range" id="bpm" min="60" max="180" step="1" value="124"><output id="bpm-out">124</output></div>
+          <div class="dial"><label for="swing">Swing</label><input type="range" id="swing" min="0" max="0.5" step="0.01" value="0.12"><output id="swing-out">56%</output></div>
+          <div class="dial"><label for="vol">Volume</label><input type="range" id="vol" min="0" max="1" step="0.01" value="0.8"><output id="vol-out">80</output></div>
+        </div>
+      </div>
+    </section>
+
+    <section aria-label="Pattern">
+      <h2>Pattern <small>16 steps · 1 bar</small></h2>
+      <div class="grid" id="grid"></div>
+    </section>
+
+    <section aria-label="Groove model">
+      <h2>Groove model <small id="ai-badge">training</small></h2>
+      <p class="note">A small neural network learns 24 classic grooves right here in your browser. It fills in your pattern, varies it, or dreams a new one, and lights up the bubbles where it expects the next hit.</p>
+      <div class="ai-status"><span id="ai-text">Waiting to start…</span><canvas id="loss" width="320" height="40" aria-label="Training loss curve"></canvas></div>
+      <div class="row">
+        <select id="style" aria-label="Style for the groove model"></select>
+      </div>
+      <div class="dial"><label for="temp">Creativity</label><input type="range" id="temp" min="0" max="1" step="0.01" value="0.45"><output id="temp-out">45</output></div>
+      <div class="row">
+        <button class="primary" id="complete" disabled>Complete</button>
+        <button id="vary" disabled>Vary</button>
+        <button id="dream" disabled>Dream</button>
+      </div>
+      <label class="check"><input type="checkbox" id="ghosts" checked> Show the model's suggestions</label>
+    </section>
+
+    <section aria-label="Library">
+      <h2>Library</h2>
+      <div class="row">
+        <select id="preset" aria-label="Preset groove"></select>
+        <button id="load">Load</button>
+        <button id="clear">Clear</button>
+      </div>
+      <div class="code">
+        <input id="code" aria-label="Pattern code" spellcheck="false" autocomplete="off">
+        <button id="copy">Copy</button>
+        <button id="paste-load">Open</button>
+      </div>
+      <div id="toast" role="status"></div>
+    </section>
+  </aside>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+
+const STEPS = 16;
+const VOICES = [
+  { id: "kick", name: "Kick", color: "#e39a55" },
+  { id: "snare", name: "Snare", color: "#38c9a6" },
+  { id: "clap", name: "Clap", color: "#ff56f2" },
+  { id: "ohat", name: "Open hat", color: "#7a5cff" },
+  { id: "hat", name: "Closed hat", color: "#ffd47e" },
+];
+const N = VOICES.length * STEPS; // 80 cells
+const GENRES = ["House", "Techno", "Hip-hop", "Trap", "Breakbeat", "Drum & bass", "Reggaeton", "Afrobeats"];
+const GENRE_BPM = [124, 132, 90, 140, 112, 172, 96, 104];
+const _ = "................";
+// Rows: kick, snare, clap, open hat, closed hat. One bar of 16th notes.
+const CORPUS = [
+  [0, "Classic house", "x...x...x...x...", _, "....x.......x...", "..x...x...x...x.", _],
+  [0, "Deep house", "x...x...x...x...", "....x.......x...", _, "..x...x...x...x.", ".x.x.x.x.x.x.x.x"],
+  [0, "Shuffle house", "x...x...x...x..x", _, "....x.......x...", "..x...x...x...x.", "x..xx..xx..xx..x"],
+  [1, "Warehouse techno", "x...x...x...x...", _, "....x.......x...", "..x...x...x...x.", "xx.xxx.xxx.xxx.x"],
+  [1, "Minimal techno", "x...x...x...x...", "..........x.....", "....x.......x...", _, "x.x.x.x.x.x.x.x."],
+  [1, "Rumble techno", "x...x...x...x.x.", _, "....x.......x...", "..x...x...x.....", ".x.x.x.x.x.x.x.x"],
+  [2, "Boom bap", "x.....x...x.....", "....x.......x...", _, _, "x.x.x.x.x.x.x.x."],
+  [2, "Lazy boom bap", "x......xx.x.....", "....x.......x...", _, "..............x.", "x.x.x.x.x.x.x..."],
+  [2, "Dusty boom bap", "x.....x..x......", "....x..x....x...", _, _, "x.xxx.x.x.xxx.x."],
+  [3, "Atlanta trap", "x......x..x.....", "........x.......", "........x.......", _, "xxxxxxxxxxxxxxxx"],
+  [3, "Rolling trap", "x.....x...x..x..", "........x.......", _, _, "x.x.xxx.x.x.xxxx"],
+  [3, "Bouncing trap", "x..x......x..x..", "........x.....x.", _, _, "xxx.x.x.xxx.x.xx"],
+  [4, "Amen-style break", "x.x.......xx....", "....x..x.x..x..x", _, _, "x.x.x.x.x.x.x.x."],
+  [4, "Funky break", "x.x...x...x..x..", "....x..x....x..x", _, ".......x.....x..", "xxxxxxx.xxxxx.xx"],
+  [4, "Big beat", "x.....x.x.......", "....x.......x...", "....x.......x...", _, "x.x.x.x.x.x.x.x."],
+  [5, "Two-step", "x.........x.....", "....x.......x...", _, _, "x.x.x.x.x.x.x.x."],
+  [5, "Rolling DnB", "x.........xx....", "....x..x.....x..", _, _, "xxxxxxxxxxxxxxxx"],
+  [5, "Jungle", "x.x.......x.....", "....x.......x..x", _, "......x.........", "x.x.x...x.x.xxx."],
+  [6, "Dembow", "x...x...x...x...", "...x..x....x..x.", _, _, "x.x.x.x.x.x.x.x."],
+  [6, "Dembow clap", "x...x...x...x...", _, "...x..x....x..x.", _, ".x.x.x.x.x.x.x.x"],
+  [6, "Dembow roll", "x...x...x...x...", "...x..x.x..x..x.", _, "..............x.", "x.x.x.x.x.x.x..."],
+  [7, "Afrobeats bounce", "x..x..x...x.....", "....x.......x...", _, _, "x.xx.xx.x.xx.xx."],
+  [7, "Afro swing", "x.....x...x..x..", "...x...x...x..x.", _, _, "x.x.x.x.x.x.x.x."],
+  [7, "Afro groove", "x..x...x..x.....", "......x.......x.", _, "..x.......x.....", "x...x.x.x...x.x."],
+].map(([g, name, ...rows]) => {
+  const cells = new Float32Array(N);
+  rows.forEach((r, v) => { for (let s = 0; s < STEPS; s++) cells[v * STEPS + s] = r[s] === "x" ? 1 : 0; });
+  return { g, name, cells };
+});
+
+// ---------- state ----------
+const state = {
+  grid: new Float32Array(CORPUS[1].cells), bpm: 124, swing: 0.12, volume: 0.8,
+  mute: VOICES.map(() => false), solo: VOICES.map(() => false),
+  ghosts: new Float32Array(N), showGhosts: true, style: -1, creativity: 0.45, playing: false, step: 0,
+};
+const STORE = "meloji-beatlab-v1";
+try {
+  const saved = JSON.parse(localStorage.getItem(STORE) || "null");
+  if (saved && saved.grid && saved.grid.length === N) {
+    state.grid = Float32Array.from(saved.grid);
+    Object.assign(state, { bpm: saved.bpm ?? 124, swing: saved.swing ?? 0.12, volume: saved.volume ?? 0.8, style: saved.style ?? -1, creativity: saved.creativity ?? 0.45 });
+  }
+} catch { /* storage unavailable: start from the example groove */ }
+let saveTimer = 0;
+function persist() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try { localStorage.setItem(STORE, JSON.stringify({ grid: Array.from(state.grid), bpm: state.bpm, swing: state.swing, volume: state.volume, style: state.style, creativity: state.creativity })); } catch { /* ignore */ }
+  }, 250);
+}
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// ---------- pattern codes (share a beat as text) ----------
+function encodeCode() {
+  let hex = "";
+  for (let i = 0; i < N; i += 4) hex += ((state.grid[i] << 3) | (state.grid[i + 1] << 2) | (state.grid[i + 2] << 1) | state.grid[i + 3]).toString(16);
+  return `sp-${hex}-${state.bpm}`;
+}
+function decodeCode(code) {
+  const m = /^sp-([0-9a-f]{20})-(\d{2,3})$/i.exec(code.trim());
+  if (!m) return null;
+  const grid = new Float32Array(N);
+  [...m[1]].forEach((h, k) => { const n = parseInt(h, 16); for (let b = 0; b < 4; b++) grid[k * 4 + b] = (n >> (3 - b)) & 1; });
+  return { grid, bpm: Math.min(180, Math.max(60, +m[2])) };
+}
+
+// ---------- audio: synthesized drum kit, Web Audio scheduler ----------
+class Kit {
+  ensure() {
+    if (this.ctx) return this.ctx;
+    const c = (this.ctx = new (window.AudioContext || window.webkitAudioContext)());
+    this.master = c.createGain();
+    this.master.gain.value = state.volume;
+    const comp = c.createDynamicsCompressor();
+    comp.threshold.value = -14; comp.ratio.value = 4; comp.attack.value = 0.003; comp.release.value = 0.15;
+    this.analyser = c.createAnalyser();
+    this.analyser.fftSize = 512;
+    this.master.connect(comp).connect(this.analyser).connect(c.destination);
+    this.wave = new Uint8Array(this.analyser.fftSize);
+    const len = c.sampleRate;
+    this.noise = c.createBuffer(1, len, c.sampleRate);
+    const d = this.noise.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    return c;
+  }
+  env(g, t, peak, decay, attack = 0.002) {
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak, t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+  }
+  noiseThrough(t, dur, type, freq, q = 0.7) {
+    const c = this.ctx, src = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+    src.buffer = this.noise; f.type = type; f.frequency.value = freq; f.Q.value = q;
+    src.connect(f).connect(g).connect(this.master);
+    src.start(t, Math.random() * 0.4); src.stop(t + dur);
+    return g;
+  }
+  play(v, t) {
+    const c = this.ensure();
+    if (v === 0) { // kick: pitch-dropping sine plus a short click
+      const o = c.createOscillator(), g = c.createGain();
+      o.frequency.setValueAtTime(155, t); o.frequency.exponentialRampToValueAtTime(46, t + 0.12);
+      o.connect(g).connect(this.master); this.env(g, t, 1, 0.42, 0.004); o.start(t); o.stop(t + 0.45);
+      this.env(this.noiseThrough(t, 0.03, "highpass", 3200), t, 0.22, 0.015);
+    } else if (v === 1) { // snare: noise body and a tuned tone
+      this.env(this.noiseThrough(t, 0.25, "highpass", 1300), t, 0.55, 0.2);
+      const o = c.createOscillator(), g = c.createGain();
+      o.type = "triangle"; o.frequency.setValueAtTime(190, t); o.frequency.exponentialRampToValueAtTime(150, t + 0.08);
+      o.connect(g).connect(this.master); this.env(g, t, 0.45, 0.1); o.start(t); o.stop(t + 0.12);
+    } else if (v === 2) { // clap: three quick bursts and a tail
+      const g = this.noiseThrough(t, 0.4, "bandpass", 1150, 0.9);
+      g.gain.setValueAtTime(0.0001, t);
+      for (let k = 0; k < 3; k++) { const tk = t + k * 0.012; g.gain.setValueAtTime(0.75, tk); g.gain.exponentialRampToValueAtTime(0.06, tk + 0.01); }
+      g.gain.setValueAtTime(0.65, t + 0.036); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+    } else if (v === 3) { // open hat
+      this.open = this.noiseThrough(t, 0.45, "highpass", 7400);
+      this.env(this.open, t, 0.32, 0.38);
+    } else { // closed hat, which chokes a ringing open hat
+      if (this.open) { this.open.gain.cancelScheduledValues(t); this.open.gain.setTargetAtTime(0.0001, t, 0.008); this.open = null; }
+      this.env(this.noiseThrough(t, 0.08, "highpass", 8200), t, 0.26, 0.05);
+    }
+  }
+  level() {
+    if (!this.analyser) return 0;
+    this.analyser.getByteTimeDomainData(this.wave);
+    let sum = 0;
+    for (const x of this.wave) { const y = (x - 128) / 128; sum += y * y; }
+    return Math.sqrt(sum / this.wave.length);
+  }
+}
+const kit = new Kit();
+const hits = [];   // { v, s, t } scheduled for the visuals
+const ticks = [];  // { s, t } step boundaries
+let timer = 0, nextTime = 0, nextStep = 0;
+const stepDur = () => 60 / state.bpm / 4;
+const audible = (v) => !state.mute[v] && (!state.solo.some(Boolean) || state.solo[v]);
+
+function schedule() {
+  const c = kit.ctx;
+  while (nextTime < c.currentTime + 0.12) {
+    const s = nextStep, base = nextTime;
+    const t = base + (s % 2 === 1 ? stepDur() * state.swing : 0);
+    for (let v = 0; v < VOICES.length; v++) {
+      if (state.grid[v * STEPS + s] && audible(v)) { kit.play(v, t); hits.push({ v, s, t }); }
+    }
+    ticks.push({ s, t: base });
+    nextTime += stepDur();
+    nextStep = (s + 1) % STEPS;
+  }
+}
+function setPlaying(on) {
+  if (on === state.playing) return;
+  state.playing = on;
+  if (on) {
+    const c = kit.ensure();
+    c.resume();
+    nextTime = c.currentTime + 0.06; nextStep = 0;
+    schedule();
+    timer = setInterval(schedule, 25);
+  } else {
+    clearInterval(timer);
+    hits.length = 0; ticks.length = 0;
+  }
+  ui.play.setAttribute("aria-label", on ? "Stop" : "Play");
+  ui.playIcon.setAttribute("d", on ? "M6 5h4.5v14H6zm7.5 0H18v14h-4.5z" : "M7 4.5v15l13-7.5z");
+}
+
+// ---------- groove model: a denoising network trained in the browser ----------
+// Input: 80 cell values (hits we know about), 80 "known" flags and an 8-way style. Output: the chance
+// of a hit in every cell. Trained like Coconet: random cells are hidden and the network learns to fill them,
+// so the same model completes a pattern, varies it, or invents one by repeated resampling.
+const IN = N * 2 + GENRES.length;
+const MODEL_KEY = "indexeddb://meloji-groove-v1";
+let model = null;
+const losses = [];
+
+function encodeInput(cells, known, genre, out, offset = 0) {
+  for (let i = 0; i < N; i++) { out[offset + i] = cells[i] * known[i]; out[offset + N + i] = known[i]; }
+  if (genre >= 0) out[offset + 2 * N + genre] = 1;
+}
+function trainingExample(xs, ys, ws, row) {
+  const pat = CORPUS[(Math.random() * CORPUS.length) | 0];
+  const cells = Float32Array.from(pat.cells);
+  if (Math.random() < 0.4) { // swap one instrument with another groove of the same style
+    const peers = CORPUS.filter((p) => p.g === pat.g);
+    const other = peers[(Math.random() * peers.length) | 0], v = (Math.random() * VOICES.length) | 0;
+    for (let s = 0; s < STEPS; s++) cells[v * STEPS + s] = other.cells[v * STEPS + s];
+  }
+  const known = new Float32Array(N);
+  if (Math.random() < 0.3) { for (let i = 0; i < N; i++) known[i] = cells[i] && Math.random() < 0.6 ? 1 : 0; } // "suggest" mode
+  else { const r = Math.random(); for (let i = 0; i < N; i++) known[i] = Math.random() > r ? 1 : 0; }
+  encodeInput(cells, known, Math.random() < 0.75 ? pat.g : -1, xs, row * IN);
+  for (let i = 0; i < N; i++) { ys[row * N + i] = cells[i]; ws[row * N + i] = known[i] ? 0.05 : 1; }
+}
+function buildModel() {
+  const m = tf.sequential();
+  m.add(tf.layers.dense({ inputShape: [IN], units: 192, activation: "relu" }));
+  m.add(tf.layers.dropout({ rate: 0.15 }));
+  m.add(tf.layers.dense({ units: 192, activation: "relu" }));
+  m.add(tf.layers.dense({ units: N, activation: "sigmoid" }));
+  return m;
+}
+async function trainModel() {
+  const EPOCHS = 45, BATCH = 64, PER_EPOCH = 10;
+  const opt = tf.train.adam(0.003);
+  const started = performance.now();
+  for (let e = 0; e < EPOCHS; e++) {
+    let total = 0;
+    for (let b = 0; b < PER_EPOCH; b++) {
+      const xs = new Float32Array(BATCH * IN), ys = new Float32Array(BATCH * N), ws = new Float32Array(BATCH * N);
+      for (let r = 0; r < BATCH; r++) trainingExample(xs, ys, ws, r);
+      const cost = tf.tidy(() => {
+        const x = tf.tensor2d(xs, [BATCH, IN]), y = tf.tensor2d(ys, [BATCH, N]), w = tf.tensor2d(ws, [BATCH, N]);
+        return opt.minimize(() => tf.losses.logLoss(y, model.apply(x, { training: true }), w), true);
+      });
+      total += (await cost.data())[0];
+      cost.dispose();
+    }
+    losses.push(total / PER_EPOCH);
+    setAi(`Training on ${CORPUS.length} grooves · epoch <strong>${e + 1}</strong>/${EPOCHS} · loss ${losses.at(-1).toFixed(3)}`, "training");
+    drawLoss();
+    await tf.nextFrame();
+  }
+  opt.dispose();
+  return (performance.now() - started) / 1000;
+}
+function predict(cells, known, genre) {
+  const x = new Float32Array(IN);
+  encodeInput(cells, known, genre, x);
+  return tf.tidy(() => model.predict(tf.tensor2d(x, [1, IN])).dataSync());
+}
+const sharpen = (p, temp) => { const a = Math.pow(p, 1 / temp), b = Math.pow(1 - p, 1 / temp); return a / (a + b); };
+const temperature = () => 0.55 + state.creativity * 1.25;
+const styleFor = (forDream) => (state.style >= 0 ? state.style : forDream ? (Math.random() * GENRES.length) | 0 : -1);
+
+function refreshGhosts() {
+  if (!model) return;
+  const known = state.grid.map((c) => (c ? 1 : 0));
+  const p = predict(state.grid, known, styleFor(false));
+  for (let i = 0; i < N; i++) state.ghosts[i] = state.grid[i] ? 0 : p[i];
+  renderGrid();
+}
+let ghostTimer = 0;
+const queueGhosts = () => { clearTimeout(ghostTimer); ghostTimer = setTimeout(refreshGhosts, 60); };
+
+function aiComplete() {
+  const cells = Float32Array.from(state.grid), known = cells.map((c) => (c ? 1 : 0));
+  const p = predict(cells, known, styleFor(false)), temp = temperature(), thr = 0.62 - state.creativity * 0.25;
+  for (let i = 0; i < N; i++) {
+    if (cells[i]) continue;
+    const q = sharpen(p[i], temp);
+    if (q > thr || Math.random() < q * state.creativity * 0.35) cells[i] = 1;
+  }
+  applyPattern(cells, "Completed your pattern");
+}
+function aiVary() {
+  const cells = Float32Array.from(state.grid), temp = temperature(), genre = styleFor(false);
+  let known = cells.map(() => (Math.random() < 0.6 ? 1 : 0));
+  for (let k = 0; k < 4; k++) {
+    const p = predict(cells, known, genre);
+    for (let i = 0; i < N; i++) if (!known[i]) cells[i] = Math.random() < sharpen(p[i], temp) ? 1 : 0;
+    known = cells.map(() => (Math.random() < 0.75 ? 1 : 0));
+  }
+  applyPattern(cells, "Made a variation");
+}
+function aiDream() {
+  const genre = styleFor(true), temp = temperature(), ROUNDS = 12;
+  const cells = new Float32Array(N);
+  let known = new Float32Array(N);
+  for (let k = 0; k < ROUNDS; k++) {
+    const p = predict(cells, known, genre);
+    for (let i = 0; i < N; i++) if (!known[i]) cells[i] = Math.random() < sharpen(p[i], temp) ? 1 : 0;
+    const hide = 0.9 * (1 - (k + 1) / ROUNDS);
+    known = cells.map(() => (Math.random() > hide ? 1 : 0));
+  }
+  applyPattern(cells, `Dreamed a ${GENRES[genre]} groove`, GENRE_BPM[genre]);
+}
+
+// ---------- 3D ring ----------
+const scene3d = { ok: false, bubbles: [] };
+const RING_R = (v) => 1.55 + v * 0.95;
+const BUB_R = (v) => 0.23 + v * 0.045;
+const stepPos = (v, s) => { const a = (s / STEPS) * Math.PI * 2; return [RING_R(v) * Math.sin(a), -RING_R(v) * Math.cos(a)]; };
+
+function build3d() {
+  const host = document.getElementById("scene");
+  let renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+  } catch {
+    document.getElementById("nogl").hidden = false;
+    return;
+  }
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+  host.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color("#04222b");
+  scene.fog = new THREE.Fog("#04222b", 20, 36);
+  const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+  camera.position.set(0, 11.5, 8.6);
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enablePan = false;
+  controls.enableDamping = !reducedMotion;
+  controls.maxPolarAngle = 1.2;
+  controls.minDistance = 9;
+  controls.maxDistance = 26;
+
+  scene.add(new THREE.HemisphereLight("#c6efe7", "#02141a", 0.7));
+  const key = new THREE.DirectionalLight("#ffffff", 1.6);
+  key.position.set(4, 10, 6);
+  scene.add(key);
+  const coreLight = new THREE.PointLight("#38c9a6", 6, 9, 2);
+  coreLight.position.set(0, 1.4, 0);
+  scene.add(coreLight);
+
+  // the MELOJI back plate
+  const plate = new THREE.Mesh(
+    new THREE.CylinderGeometry(6.5, 6.75, 0.45, 160),
+    new THREE.MeshStandardMaterial({ color: "#062f39", roughness: 0.82, metalness: 0.08 }),
+  );
+  plate.position.y = -0.23;
+  scene.add(plate);
+
+  const pickables = [];
+  VOICES.forEach((voice, v) => {
+    const color = new THREE.Color(voice.color);
+    const track = new THREE.Mesh(
+      new THREE.TorusGeometry(RING_R(v), 0.014, 8, 220),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.28 }),
+    );
+    track.rotation.x = Math.PI / 2;
+    track.position.y = 0.005;
+    scene.add(track);
+    const domeGeo = new THREE.SphereGeometry(BUB_R(v), 36, 18, 0, Math.PI * 2, 0, Math.PI / 2);
+    const rimGeo = new THREE.TorusGeometry(BUB_R(v), 0.02 + v * 0.004, 10, 56);
+    for (let s = 0; s < STEPS; s++) {
+      const [x, z] = stepPos(v, s);
+      const group = new THREE.Group();
+      group.position.set(x, 0.01, z);
+      const dome = new THREE.Mesh(domeGeo, new THREE.MeshPhysicalMaterial({
+        color, emissive: color, emissiveIntensity: 0, roughness: 0.32, clearcoat: 0.8, clearcoatRoughness: 0.25,
+        transparent: true, opacity: 0.2,
+      }));
+      const rim = new THREE.Mesh(rimGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.35 }));
+      rim.rotation.x = Math.PI / 2;
+      group.add(dome, rim);
+      scene.add(group);
+      const b = { v, s, i: v * STEPS + s, group, dome, rim, k: state.grid[v * STEPS + s], pulse: 0, hover: 0, pop: 0 };
+      dome.userData.bubble = b;
+      pickables.push(dome);
+      scene3d.bubbles.push(b);
+    }
+  });
+
+  const core = new THREE.Mesh(
+    new THREE.SphereGeometry(0.85, 48, 32),
+    new THREE.MeshPhysicalMaterial({ color: "#0b4752", emissive: "#38c9a6", emissiveIntensity: 0.18, roughness: 0.25, clearcoat: 1 }),
+  );
+  core.position.y = 0.25;
+  core.userData.core = true;
+  scene.add(core);
+  pickables.push(core);
+
+  // playhead: a soft wedge of light sweeping clockwise
+  const width = (Math.PI * 2) / STEPS;
+  const wedge = new THREE.Mesh(
+    new THREE.RingGeometry(1.05, 6.25, 48, 1, Math.PI / 2 - width / 2, width),
+    new THREE.MeshBasicMaterial({ color: "#d9fff5", transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+  );
+  wedge.rotation.x = -Math.PI / 2;
+  wedge.position.y = 0.02;
+  const wedgePivot = new THREE.Group();
+  wedgePivot.add(wedge);
+  scene.add(wedgePivot);
+
+  // ripples on each hit
+  const ripples = Array.from({ length: 24 }, () => {
+    const m = new THREE.Mesh(
+      new THREE.RingGeometry(0.92, 1, 48),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    m.rotation.x = -Math.PI / 2;
+    m.visible = false;
+    scene.add(m);
+    return { m, life: 0, r: 0 };
+  });
+  let rippleNext = 0;
+  function ripple(b) {
+    if (reducedMotion) return;
+    const r = ripples[rippleNext++ % ripples.length];
+    r.m.position.set(b.group.position.x, 0.03, b.group.position.z);
+    r.m.material.color.set(VOICES[b.v].color);
+    r.life = 1; r.r = BUB_R(b.v); r.m.visible = true;
+  }
+
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  const bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.55, 0.45, 0.34);
+  composer.addPass(bloom);
+  composer.addPass(new OutputPass());
+
+  function resize() {
+    const w = host.clientWidth, h = host.clientHeight;
+    if (!w || !h) return;
+    renderer.setSize(w, h, false);
+    composer.setSize(w, h);
+    camera.aspect = w / h;
+    // keep the whole plate in view on narrow screens
+    const half = THREE.MathUtils.degToRad(camera.fov / 2);
+    const fit = 7.2 / Math.tan(Math.min(half, Math.atan(Math.tan(half) * camera.aspect)));
+    const dir = camera.position.clone().normalize();
+    camera.position.copy(dir.multiplyScalar(Math.max(fit, 12)));
+    controls.maxDistance = Math.max(26, fit * 1.6);
+    camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(host);
+  resize();
+
+  // picking: a short tap pops a bubble, a drag orbits
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+  const tip = document.getElementById("tip");
+  let down = null, hovered = null, pointer = null;
+  const pick = (e) => {
+    const r = renderer.domElement.getBoundingClientRect();
+    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    return ray.intersectObjects(pickables, false)[0]?.object || null;
+  };
+  renderer.domElement.addEventListener("pointerdown", (e) => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+  renderer.domElement.addEventListener("pointerup", (e) => {
+    if (!down) return;
+    const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y), quick = performance.now() - down.t < 600;
+    down = null;
+    if (moved > 6 || !quick) return;
+    const hit = pick(e);
+    if (!hit) return;
+    if (hit.userData.core) setPlaying(!state.playing);
+    else toggleCell(hit.userData.bubble.i);
+  });
+  renderer.domElement.addEventListener("pointermove", (e) => { pointer = e; });
+  renderer.domElement.addEventListener("pointerleave", () => { pointer = null; hovered = null; tip.hidden = true; renderer.domElement.style.cursor = ""; });
+
+  const clock = new THREE.Clock();
+  function frame() {
+    const dt = Math.min(clock.getDelta(), 0.05);
+    controls.update();
+
+    if (pointer) {
+      const obj = pick(pointer);
+      hovered = obj?.userData.bubble || null;
+      renderer.domElement.style.cursor = obj ? "pointer" : "";
+      if (hovered) {
+        const r = renderer.domElement.getBoundingClientRect();
+        const g = state.ghosts[hovered.i];
+        tip.textContent = `${VOICES[hovered.v].name} · step ${hovered.s + 1}` + (!state.grid[hovered.i] && state.showGhosts && g > 0.3 ? ` · model ${Math.round(g * 100)}%` : "");
+        tip.style.left = `${pointer.clientX - r.left}px`;
+        tip.style.top = `${pointer.clientY - r.top}px`;
+        tip.hidden = false;
+      } else if (obj?.userData.core) {
+        const r = renderer.domElement.getBoundingClientRect();
+        tip.textContent = state.playing ? "Stop" : "Play";
+        tip.style.left = `${pointer.clientX - r.left}px`;
+        tip.style.top = `${pointer.clientY - r.top}px`;
+        tip.hidden = false;
+      } else tip.hidden = true;
+      pointer = null;
+    }
+
+    // playhead + hit pulses follow the audio clock
+    let kickPulse = 0;
+    if (state.playing && kit.ctx) {
+      const now = kit.ctx.currentTime;
+      while (hits.length && hits[0].t <= now) {
+        const h = hits.shift(), b = scene3d.bubbles[h.v * STEPS + h.s];
+        b.pulse = 1;
+        ripple(b);
+        if (h.v === 0) kickPulse = 1;
+      }
+      while (ticks.length > 1 && ticks[1].t <= now) ticks.shift();
+      if (ticks.length && ticks[0].t <= now) {
+        const cur = ticks[0], frac = Math.min(1, (now - cur.t) / stepDur());
+        wedgePivot.rotation.y = -((cur.s + frac) / STEPS) * Math.PI * 2;
+        if (cur.s !== state.step) { state.step = cur.s; onStep(); }
+      }
+    }
+    const wm = wedge.material;
+    wm.opacity += ((state.playing ? 0.11 : 0) - wm.opacity) * Math.min(1, dt * 8);
+
+    const ease = Math.min(1, dt * 14);
+    for (const b of scene3d.bubbles) {
+      const on = state.grid[b.i];
+      b.k += (on - b.k) * ease;
+      b.pulse = Math.max(0, b.pulse - dt * 3.2);
+      b.pop = Math.max(0, b.pop - dt * 2.6);
+      b.hover += ((b === hovered ? 1 : 0) - b.hover) * ease;
+      const ghost = state.showGhosts ? state.ghosts[b.i] * (1 - b.k) : 0;
+      // pressed silicone: an active bubble sinks and glows
+      b.dome.scale.y = 1 - 0.55 * b.k + b.pop * 0.6;
+      const m = b.dome.material;
+      m.opacity = 0.18 + 0.78 * b.k + ghost * 0.35;
+      m.emissiveIntensity = 0.75 * b.k + b.pulse * 2.4 + ghost * 0.9;
+      b.rim.material.opacity = 0.3 + 0.6 * b.k + b.hover * 0.45 + ghost * 0.4;
+      const sc = 1 + (reducedMotion ? 0 : b.pulse * 0.32) + b.hover * 0.1;
+      b.group.scale.set(sc, sc, sc);
+    }
+    for (const r of ripples) {
+      if (!r.m.visible) continue;
+      r.life -= dt * 2;
+      if (r.life <= 0) { r.m.visible = false; continue; }
+      const s = r.r * (1 + (1 - r.life) * 1.8);
+      r.m.scale.set(s, s, s);
+      r.m.material.opacity = r.life * 0.55;
+    }
+
+    const lvl = kit.level();
+    core.material.emissiveIntensity += (0.18 + lvl * 3.2 + kickPulse * 1.2 - core.material.emissiveIntensity) * Math.min(1, dt * 10);
+    coreLight.intensity = 3 + core.material.emissiveIntensity * 8;
+    const cs = 1 + (reducedMotion ? 0 : lvl * 0.5);
+    core.scale.set(cs, cs, cs);
+
+    composer.render();
+    requestAnimationFrame(frame);
+  }
+  scene3d.ok = true;
+  scene3d.popAt = (i) => { const b = scene3d.bubbles[i]; if (b) { b.pop = 1; b.pulse = Math.max(b.pulse, 0.6); } };
+  requestAnimationFrame(frame);
+}
+
+// ---------- UI ----------
+const $ = (id) => document.getElementById(id);
+const ui = {
+  play: $("play"), playIcon: $("play-icon"), bpm: $("bpm"), swing: $("swing"), vol: $("vol"), temp: $("temp"),
+  grid: $("grid"), style: $("style"), preset: $("preset"), code: $("code"), toast: $("toast"),
+  aiText: $("ai-text"), aiBadge: $("ai-badge"), loss: $("loss"),
+};
+const cellButtons = [];
+VOICES.forEach((voice, v) => {
+  const row = document.createElement("div");
+  row.className = "track";
+  row.style.setProperty("--c", voice.color);
+  row.innerHTML = `<span class="track-name"><span class="swatch"></span>${voice.name}</span>
+    <span class="ms"><button aria-pressed="false" data-m="${v}" aria-label="Mute ${voice.name}">M</button><button aria-pressed="false" data-s="${v}" aria-label="Solo ${voice.name}">S</button></span>
+    <span class="cells"></span>`;
+  const cells = row.querySelector(".cells");
+  for (let s = 0; s < STEPS; s++) {
+    const b = document.createElement("button");
+    b.className = "cell";
+    b.dataset.i = v * STEPS + s;
+    cells.appendChild(b);
+    cellButtons.push(b);
+  }
+  ui.grid.appendChild(row);
+});
+ui.grid.addEventListener("click", (e) => {
+  const t = e.target.closest("button");
+  if (!t) return;
+  if (t.dataset.i) toggleCell(+t.dataset.i);
+  else if (t.dataset.m) { const v = +t.dataset.m; state.mute[v] = !state.mute[v]; t.setAttribute("aria-pressed", state.mute[v]); }
+  else if (t.dataset.s) { const v = +t.dataset.s; state.solo[v] = !state.solo[v]; t.setAttribute("aria-pressed", state.solo[v]); }
+});
+
+function renderGrid() {
+  cellButtons.forEach((b, i) => {
+    const on = !!state.grid[i], v = (i / STEPS) | 0, s = i % STEPS;
+    b.setAttribute("aria-pressed", on);
+    b.setAttribute("aria-label", `${VOICES[v].name} step ${s + 1}${on ? ", on" : ""}`);
+    b.style.setProperty("--g", state.showGhosts && !on ? state.ghosts[i].toFixed(2) : 0);
+    b.classList.toggle("now", state.playing && s === state.step);
+  });
+}
+function onStep() {
+  $("ro-step").textContent = String(state.step + 1).padStart(2, "0");
+  cellButtons.forEach((b, i) => b.classList.toggle("now", i % STEPS === state.step));
+}
+function toggleCell(i) {
+  state.grid[i] = state.grid[i] ? 0 : 1;
+  if (state.grid[i]) {
+    scene3d.popAt?.(i);
+    if (!state.playing) { kit.ensure().resume(); kit.play((i / STEPS) | 0, kit.ctx.currentTime + 0.005); }
+  }
+  afterChange();
+}
+function afterChange() {
+  renderGrid();
+  ui.code.value = encodeCode();
+  queueGhosts();
+  persist();
+}
+function applyPattern(cells, message, bpm) {
+  const before = Float32Array.from(state.grid);
+  state.grid = cells;
+  if (bpm) setBpm(bpm);
+  let delay = 0;
+  for (let i = 0; i < N; i++) if (cells[i] && !before[i]) { const k = i; setTimeout(() => scene3d.popAt?.(k), delay); delay += reducedMotion ? 0 : 18; }
+  afterChange();
+  toast(message);
+}
+function setBpm(bpm) {
+  state.bpm = bpm;
+  ui.bpm.value = bpm;
+  $("bpm-out").textContent = bpm;
+  $("ro-bpm").textContent = bpm;
+  persist();
+}
+const swingPct = () => Math.round(50 + state.swing * 50);
+function syncControls() {
+  setBpm(state.bpm);
+  ui.swing.value = state.swing; $("swing-out").textContent = `${swingPct()}%`; $("ro-swing").textContent = swingPct();
+  ui.vol.value = state.volume; $("vol-out").textContent = Math.round(state.volume * 100);
+  ui.temp.value = state.creativity; $("temp-out").textContent = Math.round(state.creativity * 100);
+  ui.style.value = state.style;
+}
+let toastTimer = 0;
+function toast(msg) { ui.toast.textContent = msg; clearTimeout(toastTimer); toastTimer = setTimeout(() => (ui.toast.textContent = ""), 3200); }
+
+ui.style.innerHTML = `<option value="-1">Style: any</option>` + GENRES.map((g, i) => `<option value="${i}">Style: ${g}</option>`).join("");
+ui.preset.innerHTML = GENRES.map((g, gi) => `<optgroup label="${g} · ${GENRE_BPM[gi]} BPM">` +
+  CORPUS.map((p, i) => (p.g === gi ? `<option value="${i}">${p.name}</option>` : "")).join("") + "</optgroup>").join("");
+ui.preset.value = "1";
+
+ui.play.addEventListener("click", () => setPlaying(!state.playing));
+ui.bpm.addEventListener("input", () => setBpm(+ui.bpm.value));
+ui.swing.addEventListener("input", () => { state.swing = +ui.swing.value; syncControls(); persist(); });
+ui.vol.addEventListener("input", () => { state.volume = +ui.vol.value; if (kit.master) kit.master.gain.value = state.volume; syncControls(); persist(); });
+ui.temp.addEventListener("input", () => { state.creativity = +ui.temp.value; syncControls(); persist(); });
+ui.style.addEventListener("change", () => { state.style = +ui.style.value; persist(); queueGhosts(); });
+$("ghosts").addEventListener("change", (e) => { state.showGhosts = e.target.checked; renderGrid(); });
+$("load").addEventListener("click", () => { const p = CORPUS[+ui.preset.value]; applyPattern(Float32Array.from(p.cells), `Loaded ${p.name}`, GENRE_BPM[p.g]); });
+$("clear").addEventListener("click", () => applyPattern(new Float32Array(N), "Cleared the pattern"));
+$("complete").addEventListener("click", aiComplete);
+$("vary").addEventListener("click", aiVary);
+$("dream").addEventListener("click", aiDream);
+$("copy").addEventListener("click", async () => {
+  const code = encodeCode();
+  try { await navigator.clipboard.writeText(code); toast("Copied the pattern code"); }
+  catch { ui.code.focus(); ui.code.select(); toast("Select the code and copy it"); }
+});
+$("paste-load").addEventListener("click", () => {
+  const d = decodeCode(ui.code.value);
+  if (!d) return toast("That code doesn't look right. Codes start with sp- and have 20 letters and digits.");
+  applyPattern(d.grid, "Opened the pattern code", d.bpm);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.target.closest("input, select, textarea") || e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (e.code === "Space" && !e.target.closest("button")) { e.preventDefault(); setPlaying(!state.playing); }
+  else if (model && k === "c") aiComplete();
+  else if (model && k === "v") aiVary();
+  else if (model && k === "d") aiDream();
+  else if (k === "x") applyPattern(new Float32Array(N), "Cleared the pattern");
+});
+
+function setAi(html, badge) { ui.aiText.innerHTML = html; ui.aiBadge.textContent = badge; }
+function drawLoss() {
+  const c = ui.loss, ctx = c.getContext("2d"), dpr = devicePixelRatio || 1;
+  const w = c.clientWidth || 320, h = c.clientHeight || 40;
+  if (c.width !== Math.round(w * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  if (losses.length < 2) return;
+  const hi = Math.max(...losses), lo = Math.min(...losses), span = hi - lo || 1;
+  const pts = losses.map((l, i) => [(i / (losses.length - 1)) * (w - 4) + 2, 4 + (1 - (l - lo) / span) * (h - 8)]);
+  ctx.beginPath();
+  pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+  ctx.lineTo(pts.at(-1)[0], h); ctx.lineTo(pts[0][0], h); ctx.closePath();
+  ctx.fillStyle = "rgba(255, 212, 126, 0.12)"; ctx.fill();
+  ctx.beginPath();
+  pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+  ctx.strokeStyle = "#ffd47e"; ctx.lineWidth = 1.5; ctx.stroke();
+  const [ex, ey] = pts.at(-1);
+  ctx.beginPath(); ctx.arc(ex, ey, 2.5, 0, Math.PI * 2); ctx.fillStyle = "#ffd47e"; ctx.fill();
+}
+
+async function startModel() {
+  if (typeof tf === "undefined") { setAi("The groove model couldn't load. TensorFlow.js was blocked, so the beat maker works without AI.", "off"); return; }
+  await tf.ready();
+  try {
+    model = await tf.loadLayersModel(MODEL_KEY);
+    setAi(`<strong>Ready.</strong> Loaded the model this browser trained before (${tf.getBackend()}).`, "ready");
+  } catch {
+    model = buildModel();
+    const secs = await trainModel();
+    setAi(`<strong>Ready.</strong> Trained on ${CORPUS.length} grooves in ${secs.toFixed(1)} s · final loss ${losses.at(-1).toFixed(3)} (${tf.getBackend()}).`, "ready");
+    try { await model.save(MODEL_KEY); } catch { /* storage blocked: it retrains next visit */ }
+  }
+  ["complete", "vary", "dream"].forEach((id) => ($(id).disabled = false));
+  refreshGhosts();
+}
+
+// ---------- boot ----------
+const fromHash = decodeCode(location.hash.slice(1));
+if (fromHash) { state.grid = fromHash.grid; state.bpm = fromHash.bpm; }
+syncControls();
+renderGrid();
+ui.code.value = encodeCode();
+build3d();
+startModel();
+</script>
